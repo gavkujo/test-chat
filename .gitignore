@@ -1,0 +1,12 @@
+saved/
+router/
+t5-small/
+deepseek_tweaking.md
+__pycache__/
+*.pyc
+.vscode/
+.env
+.ipynb_checkpoints/
+.DS_Store
+.pytest_cache/
+.streamlit/

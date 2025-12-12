@@ -1,0 +1,34 @@
+# Industry-specific glossary entries for settlement and surcharge operations.
+# Extend or replace this file when deploying to a different industry.
+
+glossary:
+  - term: Asaoka method
+    definition: >-
+      A graphical technique that extrapolates settlement readings to estimate the final consolidation level.
+  - term: Settlement plate
+    definition: >-
+      Instrumentation installed on reclaimed land to measure vertical displacement during surcharge loading.
+  - term: Degree of consolidation
+    definition: >-
+      Percentage indicator describing how close the soil is to finishing primary consolidation under surcharge.
+  - term: Holding period
+    definition: >-
+      Elapsed days between surcharge completion and the latest reading, used to confirm that settlement rates taper off.
+  - term: 7-day settlement rate
+    definition: >-
+      Change in settlement over the past week expressed in millimetres; compliance requires it to stay at or below 4 mm.
+  - term: Ground level (mCD)
+    definition: >-
+      Elevation of the plate location relative to chart datum. Compliance for Phase 2 requires it to stay at or above 16.9 mCD.
+  - term: Surcharge load
+    definition: >-
+      Temporary sand fill placed to accelerate soil consolidation before permanent structures are built.
+  - term: Surcharge complete date
+    definition: >-
+      The date the surcharge placement finished; it marks the start point for the holding period and consolidation tracking.
+  - term: Compliance criteria
+    definition: >-
+      Project checks requiring Asaoka DOC ≥ 90%, ground level ≥ 16.9 mCD, and the 7-day settlement rate ≤ 4 mm.
+  - term: Tuas Terminal Phase 2
+    definition: >-
+      Singapore mega-port reclamation programme covering 365 hectares with ~1900 settlement plates monitoring soil improvement.

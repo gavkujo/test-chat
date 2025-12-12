@@ -1,0 +1,12 @@
+numpy
+pandas
+openpyxl
+pyodbc
+plotly
+pypdf2
+reportlab
+sentencepiece
+dateparser
+torch
+textblob
+pyyaml

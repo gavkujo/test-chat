@@ -1,0 +1,212 @@
+# Universal grammar-driven intent and dialog state patterns.
+# These patterns are domain agnostic. Industry-specific tweaks should
+# be layered on top (e.g. via additional synonyms or post-processing).
+
+intents:
+  definition:
+    base: 0.18
+    patterns:
+      - weight: 0.85
+        all_tokens: [what, is]
+        question: true
+        window: 4
+      - weight: 0.8
+        any_tokens: [define, definition, explain, meaning, clarify]
+      - weight: 0.7
+        any_tokens: [tell]
+        any_followups: [about, meaning, definition, criteria, standard]
+        window: 5
+      - weight: 0.6
+        any_tokens: [criteria, requirement]
+        any_followups: [compliance, standard, threshold, acceptable]
+        window: 6
+      - weight: 0.75
+        any_tokens: [meaning, stands, stand]
+        any_followups: [for, of]
+        window: 5
+      - weight: 0.68
+        any_tokens: [remind, recap]
+        any_followups: [what, meaning, definition]
+        window: 6
+      - weight: 0.64
+        any_tokens: [difference]
+        any_followups: [between, versus, vs]
+        window: 5
+  data_insight:
+    base: 0.05
+    patterns:
+      - weight: 0.65
+        any_tokens: [trend, insight, analyse, analyze, analysis, overview, summary, behaviour, behavior]
+      - weight: 0.6
+        any_tokens: [plot, chart, graph, visualise, visualize, figure]
+        any_followups: [plates, data, readings, settlement, consolidation]
+        window: 6
+      - weight: 0.5
+        any_tokens: [show, compare, highlight]
+        any_followups: [data, changes, metrics, performance, readings]
+        window: 5
+      - weight: 0.45
+        any_tokens: [update, latest, status]
+        any_followups: [readings, values, metrics, numbers]
+        window: 5
+      - weight: 0.58
+        any_tokens: [scan, sweep, snapshot, pulse]
+        any_followups: [metrics, insights, numbers, compliance, drift]
+        window: 6
+      - weight: 0.52
+        any_tokens: [flag, surface, spotlight]
+        any_followups: [movement, anomaly, anomalies, shift, pattern, signal]
+        window: 6
+      - weight: 0.48
+        any_tokens: [look, check, review]
+        any_followups: [plates, cohort, programme, program, kpis]
+        window: 5
+  resource:
+    base: 0.04
+    patterns:
+      - weight: 0.65
+        any_tokens: [download, export, pdf, report, file, document]
+      - weight: 0.55
+        any_tokens: [generate, prepare, create]
+        any_followups: [report, plot, chart, document]
+        window: 6
+      - weight: 0.5
+        any_tokens: [send, share, email, forward]
+        any_followups: [report, file, pdf, document, package]
+        window: 6
+      - weight: 0.45
+        any_tokens: [fetch, pull, grab]
+        any_followups: [report, pdf, download, copy]
+        window: 5
+  conversation:
+    base: 0.06
+    patterns:
+      - weight: 0.3
+        any_tokens: [thanks, appreciate, cheers]
+      - weight: 0.2
+        length_lt: 5
+      - weight: 0.25
+        any_tokens: [ok, okay, noted, got]
+        any_followups: [it, you]
+        window: 3
+      - weight: 0.22
+        any_tokens: [sounds, looking, cool]
+        any_followups: [good, great, solid]
+        window: 4
+      - weight: 0.2
+        any_tokens: [appreciated, grateful, awesome]
+        window: 4
+  fallback:
+    base: 0.0
+    patterns: []
+
+states:
+  clarify:
+    base: 0.12
+    patterns:
+      - weight: 0.55
+        question: true
+      - weight: 0.4
+        start_tokens: [can, could, would, should, please]
+      - weight: 0.3
+        any_tokens: [explain, clarify, detail, why]
+      - weight: 0.32
+        any_tokens: [need, want]
+        any_followups: [clarity, clarification, breakdown, detail]
+        window: 6
+  investigate:
+    base: 0.08
+    patterns:
+      - weight: 0.45
+        any_tokens: [why, issue, problem, troubleshoot, investigate, broken]
+      - weight: 0.35
+        any_tokens: [does, do]
+        any_followups: [not, fail, failing, broken]
+        window: 4
+      - weight: 0.32
+        any_tokens: [spike, drift, anomaly]
+        any_followups: [where, happening, showing]
+        window: 6
+  goal_setting:
+    base: 0.07
+    patterns:
+      - weight: 0.35
+        any_tokens: [next, plan, schedule, priority, focus]
+      - weight: 0.3
+        any_tokens: [should, need, want]
+        any_followups: [do, tackle, cover, review]
+        window: 5
+      - weight: 0.28
+        any_tokens: [line, tee, prep, prepare]
+        any_followups: [up, next]
+        window: 4
+  rapport:
+    base: 0.05
+    patterns:
+      - weight: 0.4
+        any_tokens: [thanks, appreciate, grateful, cheers]
+      - weight: 0.3
+        any_tokens: [great, awesome, perfect]
+      - weight: 0.25
+        any_tokens: [thanks, appreciate]
+        any_followups: [again, loads, heaps]
+        window: 4
+  smalltalk:
+    base: 0.18
+    patterns:
+      - weight: 0.45
+        start_tokens: [hi, hello, hey]
+      - weight: 0.4
+        any_tokens: ["what's", whats]
+        any_followups: [up, going, happening]
+        window: 3
+      - weight: 0.35
+        any_tokens: ["how's", how, howdy, sup]
+        any_followups: [going, things, it]
+        window: 4
+      - weight: 0.3
+        any_tokens: [thanks, appreciate]
+        length_lt: 6
+      - weight: 0.3
+        any_tokens: [ok, okay, cool, chio, cheers, yo]
+      - weight: 0.3
+        any_tokens: [morning, afternoon, evening]
+      - weight: 0.28
+        any_tokens: [hiya, sup]
+        window: 3
+
+transitions:
+  clarify:
+    clarify: 0.3
+    investigate: 0.15
+    goal_setting: 0.1
+    rapport: 0.1
+    smalltalk: 0.25
+    default: 0.1
+  investigate:
+    investigate: 0.35
+    clarify: 0.3
+    goal_setting: 0.2
+    rapport: 0.1
+    default: 0.05
+  goal_setting:
+    goal_setting: 0.35
+    clarify: 0.3
+    investigate: 0.15
+    rapport: 0.1
+    smalltalk: 0.05
+    default: 0.05
+  rapport:
+    rapport: 0.3
+    clarify: 0.25
+    smalltalk: 0.2
+    goal_setting: 0.15
+    default: 0.1
+  smalltalk:
+    smalltalk: 0.3
+    rapport: 0.25
+    clarify: 0.2
+    goal_setting: 0.15
+    default: 0.1
+
+initial_state: clarify

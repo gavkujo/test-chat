@@ -1,0 +1,20 @@
+# Industry-specific function metadata.
+# Map functions to default intents and keyword cues so the dispatcher and
+# grammar layer can cross-reference them.
+
+functions:
+  Asaoka_data:
+    intent: data_insight
+    keywords: [asaoka, assessment, prediction, "single plate", settlement, consolidation]
+  SM_overview:
+    intent: data_insight
+    keywords: [overview, stats, information, analysis, summary, "multiple plates", fleet, cohort, "plates"]
+  reporter_Asaoka:
+    intent: resource
+    keywords: [pdf, report, document, "asaoka report", download]
+  plot_combi_S:
+    intent: resource
+    keywords: [plot, chart, graph, "combined plot", visualise, visualize]
+
+metadata:
+  domain_focus: Tuas Terminal Phase 2

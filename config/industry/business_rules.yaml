@@ -1,0 +1,19 @@
+# Industry-specific business rule thresholds for settlement plate monitoring.
+# Update the numeric values or add/remove rules when the compliance regime changes.
+
+plates_data:
+  - name: Asaoka_DOC
+    threshold: 90.0
+    comparison: ">="
+    description: Degree of consolidation should exceed 90%.
+    recommendation: Consider maintaining surcharge or remedial works until consolidation improves.
+  - name: 7day_rate
+    threshold: 4.0
+    comparison: "<="
+    description: Seven day settlement should stay below 4 mm.
+    recommendation: Hold surcharge longer or investigate drainage if settlement is too high.
+  - name: Latest_GL
+    threshold: 16.9
+    comparison: ">="
+    description: Ground level should be above 16.9 mCD for compliance.
+    recommendation: Schedule topping-up or review surcharge where ground level falls short.
