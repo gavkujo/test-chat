@@ -13,6 +13,8 @@ import random
 import pandas as pd
 import plotly.express as px
 import plotly.io as pio
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 
 from core.business_rules import BusinessRuleEngine
 from core.conversation import ConversationManager, ConversationTurn
@@ -694,108 +696,128 @@ class ResponseGenerator:
         if df.empty:
             return charts
 
-        sanitized = {self._sanitize_column_name(col): col for col in df.columns}
+        if data_type != "plates_data":
+            return charts
 
-        def resolve(aliases: Iterable[str]) -> Optional[str]:
+        frame = df.copy()
+        sanitized = {self._sanitize_column_name(col): col for col in frame.columns}
+
+        def resolve(*aliases: str) -> Optional[str]:
             for alias in aliases:
                 key = self._sanitize_column_name(alias)
                 if key in sanitized:
                     return sanitized[key]
             return None
 
-        def resolve_rule_column(name: str) -> Optional[str]:
-            key = self._sanitize_column_name(name)
-            if key in sanitized:
-                return sanitized[key]
-            for col_key, col_name in sanitized.items():
-                if key in col_key:
-                    return col_name
-            return None
+        plate_col = resolve("PointID", "point_id", "plate", "plateid", "full_name", "id", "name")
+        rate_col = resolve("7day_rate", "seven_day_rate", "weekly_rate")
+        pressure_col = resolve("surcharge_pressure", "surcharge_pressure_kpa", "surchargepressure", "Surcharge_Pressure")
+        doc_col = resolve("Asaoka_DOC", "asaoka_doc", "degreeofconsolidation", "doc")
 
-        point_col = resolve(("PointID", "point_id", "plate", "plateid", "full_name", "id", "name"))
-        status_col = resolve(("status", "state", "flag"))
-        berth_col = resolve(("berth",))
-        area_col = resolve(("area", "region", "zone"))
-        doc_col = resolve(("Asaoka_DOC", "doc", "degreeofconsolidation"))
-        rate_col = resolve(("7day_rate", "weekly_rate", "seven_day_rate"))
-
-        rules = self.business.rule_map.get(data_type, []) if hasattr(self, "business") else []
+        rules = self.business.rule_map.get("plates_data", []) if hasattr(self, "business") else []
         rule_lookup = {self._sanitize_column_name(rule.name): rule for rule in rules}
 
-        if data_type == "plates_data" and doc_col and rate_col:
-            hover_fields: Dict[str, bool] = {}
-            for candidate in (point_col, berth_col, area_col):
-                if candidate:
-                    hover_fields[candidate] = True
-            fig = px.scatter(
-                df,
-                x=doc_col,
-                y=rate_col,
-                color=status_col if status_col else None,
-                hover_data=hover_fields if hover_fields else None,
+        def get_rule(*metric_aliases: str) -> Optional[Any]:
+            for alias in metric_aliases:
+                alias_key = self._sanitize_column_name(alias)
+                if alias_key in rule_lookup:
+                    return rule_lookup[alias_key]
+            return None
+
+        def collect_labels(index: pd.Index) -> List[str]:
+            if plate_col and plate_col in frame.columns:
+                return frame.loc[index, plate_col].astype(str).tolist()
+            return [f"Plate {i}" for i in range(1, len(index) + 1)]
+
+        box_sources: List[Tuple[str, pd.Series, List[str], Optional[Any]]] = []
+
+        if rate_col in frame.columns:
+            rate_series = pd.to_numeric(frame[rate_col], errors="coerce").dropna()
+            if not rate_series.empty:
+                box_sources.append((
+                    "7-day Rate (mm)",
+                    rate_series,
+                    collect_labels(rate_series.index),
+                    get_rule("7day_rate", "seven_day_rate", "weekly_rate"),
+                ))
+
+        if pressure_col in frame.columns:
+            pressure_series = pd.to_numeric(frame[pressure_col], errors="coerce").dropna()
+            if not pressure_series.empty:
+                box_sources.append((
+                    "Surcharge Pressure (kPa)",
+                    pressure_series,
+                    collect_labels(pressure_series.index),
+                    get_rule("surcharge_pressure", "Surcharge_Pressure"),
+                ))
+
+        if box_sources:
+            fig = make_subplots(rows=1, cols=len(box_sources), subplot_titles=[item[0] for item in box_sources])
+            for idx, (title, series, labels, rule) in enumerate(box_sources, start=1):
+                fig.add_trace(
+                    go.Box(
+                        y=series,
+                        name=title,
+                        boxpoints="outliers",
+                        hovertext=labels,
+                        hoverinfo="y+text",
+                        marker=dict(color="#546E7A" if idx == 1 else "#00838F"),
+                    ),
+                    row=1,
+                    col=idx,
+                )
+                fig.update_xaxes(title_text="", row=1, col=idx)
+                fig.update_yaxes(title_text="", row=1, col=idx)
+                if rule:
+                    fig.add_hline(
+                        y=rule.threshold,
+                        line_color="#D32F2F",
+                        line_dash="dot",
+                        annotation_text=f"Threshold {rule.threshold:.2f}",
+                        annotation_position="top right",
+                        row=1,
+                        col=idx,
+                    )
+            fig.update_layout(
+                showlegend=False,
+                margin=dict(l=50, r=30, t=70, b=40),
+                title_text="Rate & Pressure Distributions",
             )
-
-            doc_rule = rule_lookup.get(self._sanitize_column_name(doc_col))
-            if doc_rule:
-                fig.add_vline(
-                    x=doc_rule.threshold,
-                    line_color="#888888",
-                    line_dash="dash",
-                    annotation_text="DOC target",
-                    annotation_position="top left",
-                )
-
-            rate_rule = rule_lookup.get(self._sanitize_column_name(rate_col))
-            if rate_rule:
-                fig.add_hline(
-                    y=rate_rule.threshold,
-                    line_color="#888888",
-                    line_dash="dash",
-                    annotation_text="7-day target",
-                    annotation_position="bottom right",
-                )
-
-            fig.update_layout(margin=dict(l=60, r=20, t=70, b=50))
             charts.append(
-                ChartPayload(title="DOC vs 7-day Rate", figure_json=cast(str, pio.to_json(fig, validate=False)))
+                ChartPayload(title="Rate & Pressure Distributions", figure_json=cast(str, pio.to_json(fig, validate=False)))
             )
 
-        if data_type == "plates_data" and point_col:
-            plotted_metrics = {col for col in (doc_col, rate_col) if col}
-            for rule in rules:
-                metric_col = resolve_rule_column(rule.name)
-                if not metric_col or metric_col in plotted_metrics or metric_col not in df.columns:
-                    continue
-                include_cols: List[str] = [point_col, metric_col]
-                if status_col and status_col not in include_cols and status_col in df.columns:
-                    include_cols.append(status_col)
-                data = df[include_cols].copy()
-                data[metric_col] = pd.to_numeric(data[metric_col], errors="coerce")
-                data = data.dropna(subset=[metric_col])
-                if data.empty:
-                    continue
-                ascending = rule.comparison.strip() in {"<", "<="}
-                data = data.sort_values(metric_col, ascending=ascending)
-                color_arg = status_col if status_col and status_col in data.columns else None
-                fig = px.bar(
-                    data,
-                    x=point_col,
-                    y=metric_col,
-                    color=color_arg,
-                    title=f"{metric_col} vs Threshold",
+        if doc_col in frame.columns:
+            doc_series = pd.to_numeric(frame[doc_col], errors="coerce").dropna()
+            if not doc_series.empty:
+                labels = collect_labels(doc_series.index)
+                doc_df = pd.DataFrame({
+                    "Plate": labels,
+                    "Asaoka_DOC": doc_series.values,
+                }).sort_values("Asaoka_DOC", ascending=False)
+                bar_fig = px.bar(doc_df, x="Plate", y="Asaoka_DOC", text="Asaoka_DOC")
+                doc_min = float(doc_df["Asaoka_DOC"].min())
+                doc_max = float(doc_df["Asaoka_DOC"].max())
+                lower_bound = 50.0 if doc_min >= 50.0 else max(0.0, doc_min - 5.0)
+                upper_bound = max(100.0, doc_max + 2.0)
+                bar_fig.update_traces(marker_color="#1565C0", texttemplate="%{text:.1f}", textposition="outside")
+                bar_fig.update_layout(
+                    margin=dict(l=60, r=40, t=80, b=80),
+                    title="Asaoka DOC by Plate",
+                    yaxis=dict(range=[lower_bound, upper_bound]),
                 )
-                fig.add_hline(
-                    y=rule.threshold,
-                    line_color="#888888",
-                    line_dash="dash",
-                    annotation_text=f"Target {rule.threshold:.2f}",
-                    annotation_position="top right",
-                )
-                fig.update_layout(margin=dict(l=60, r=20, t=70, b=60))
+                doc_rule = get_rule("Asaoka_DOC", "asaoka_doc", "degreeofconsolidation")
+                if doc_rule:
+                    bar_fig.add_hline(
+                        y=doc_rule.threshold,
+                        line_dash="dot",
+                        line_color="#FF7043",
+                        annotation_text=f"DOC threshold {doc_rule.threshold:.1f}",
+                        annotation_position="top right",
+                    )
                 charts.append(
-                    ChartPayload(title=f"{metric_col} Compliance", figure_json=cast(str, pio.to_json(fig, validate=False)))
+                    ChartPayload(title="Asaoka DOC by Plate", figure_json=cast(str, pio.to_json(bar_fig, validate=False)))
                 )
-                break
 
         return charts
 

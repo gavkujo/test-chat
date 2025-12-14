@@ -35,10 +35,10 @@ import torch
 import sentencepiece as spm
 
 RULE_KEYWORDS = {
-        "SM_overview": ["overview", "analysis", "summary", "multiple plates", "all plates"],
-        "reporter_Asaoka": ["pdf report", "settlement report", "status report", "generate pdf", "document"],
+        "SM_overview": [],
+        "reporter_Asaoka": ["pdf report", "report", "settlement report", "status report", "generate pdf", "document"],
         "plot_combi_S": ["plot", "graph", "combined plot", "visualize", "chart"],
-        "Asaoka_data": ["asaoka", "assessment", "prediction", "single plate", "settlement value"],
+        "Asaoka_data": [],
     }
 
 def rule_based_func(raw_query):

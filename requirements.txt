@@ -10,3 +10,4 @@ dateparser
 torch
 textblob
 pyyaml
+kaledio

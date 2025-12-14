@@ -12,6 +12,11 @@ plates_data:
     comparison: "<="
     description: Seven day settlement should stay below 4 mm.
     recommendation: Hold surcharge longer or investigate drainage if settlement is too high.
+  - name: Surcharge_Pressure
+    threshold: 120.0
+    comparison: "<="
+    description: Surcharge pressure should remain under the design cap.
+    recommendation: Review surcharge staging or relieve loading if the pressure stays elevated.
   - name: Latest_GL
     threshold: 16.9
     comparison: ">="

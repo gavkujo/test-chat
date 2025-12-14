@@ -64,6 +64,8 @@ MAP_KEYWORDS = (
     "mapping",
 )
 
+GEOCHAT_REDIRECT_FUNCS = {"Asaoka_data", "SM_overview"}
+
 
 def wants_map(prompt: str) -> bool:
     lowered = prompt.lower()
@@ -169,6 +171,71 @@ def derive_lookup_context(prompt: str) -> Optional[Dict[str, Any]]:
     }
 
 
+def build_geo_lookup_payload(prompt: str, target_func: str) -> Dict[str, Any]:
+    """Fetch plate details from the GeoChat API for deterministic responses."""
+
+    def _error_payload(message: str) -> Dict[str, Any]:
+        error_output = {
+            "status": "error",
+            "type": target_func,
+            "intent": "plates_data",
+            "error": message,
+            "source": "geochat_map_api",
+        }
+        classifier_meta = {
+            "Function": target_func,
+            "Source": "geochat_map_api",
+            "Status": "error",
+            "Error": message,
+        }
+        return {
+            "func_name": target_func,
+            "func_output": error_output,
+            "classifier_data": classifier_meta,
+            "params": {"lookup": None},
+        }
+
+    try:
+        lookup_result = lookup_prompt_records(prompt)
+    except QueryParsingError as exc:
+        return _error_payload(str(exc))
+    except LookupExecutionError as exc:
+        return _error_payload(str(exc))
+    except Exception as exc:  # pragma: no cover - defensive guard
+        return _error_payload(str(exc))
+
+    output_payload: Dict[str, Any] = {
+        "status": "ok",
+        "type": target_func,
+        "intent": "plates_data",
+        "data": lookup_result.records,
+        "lookup": lookup_result.to_dict(),
+        "source": "geochat_map_api",
+        "records_fetched": lookup_result.total_records,
+        "highlight_ids": sorted(lookup_result.highlight_ids),
+    }
+    if not lookup_result.records:
+        output_payload["status"] = "no_data"
+        output_payload["message"] = "GeoChat returned no plate records for this request."
+
+    classifier_meta = {
+        "Function": target_func,
+        "Source": "geochat_map_api",
+        "Lookup": lookup_result.intent.to_dict(),
+        "Records": len(lookup_result.records),
+        "RecordsFetched": lookup_result.total_records,
+    }
+    if lookup_result.api_url:
+        classifier_meta["ApiUrl"] = lookup_result.api_url
+
+    return {
+        "func_name": target_func,
+        "func_output": output_payload,
+        "classifier_data": classifier_meta,
+        "params": {"lookup": lookup_result.intent.to_dict()},
+    }
+
+
 def render_assistant_payload(payload: ResponsePayload, func_output=None):
     """Render the structured response returned by the logic generator."""
 
@@ -262,7 +329,7 @@ def display_chat():
                 st.markdown(str(msg))
 
 # --- LLM Streaming Response ---
-def stream_response(user_input, func_name=None, params=None, func_output=None):
+def stream_response(user_input, func_name=None, params=None, func_output=None, classifier_metadata=None):
     # echo user
     add_message("user", user_input)
     with st.chat_message("user"):
@@ -273,26 +340,27 @@ def stream_response(user_input, func_name=None, params=None, func_output=None):
     with st.chat_message("assistant"), st.spinner("Assistant is composing..."):
         effective_func_name = func_name
         effective_output = func_output
-        classifier_metadata = None
+        classifier_meta = classifier_metadata
 
-        if func_name:
-            classifier_metadata = {
-                "Function": func_name,
-                "Params": params,
-                "Output": func_output,
-            }
-        elif not request_wants_map:
-            lookup_context = derive_lookup_context(user_input)
-            if lookup_context:
-                effective_func_name = lookup_context["func_name"]
-                effective_output = lookup_context["func_output"]
-                classifier_metadata = lookup_context["classifier_data"]
-                params = lookup_context.get("params")
+        if classifier_meta is None:
+            if func_name:
+                classifier_meta = {
+                    "Function": func_name,
+                    "Params": params,
+                    "Output": func_output,
+                }
+            elif not request_wants_map:
+                lookup_context = derive_lookup_context(user_input)
+                if lookup_context:
+                    effective_func_name = lookup_context["func_name"]
+                    effective_output = lookup_context["func_output"]
+                    classifier_meta = lookup_context["classifier_data"]
+                    params = lookup_context.get("params")
 
         payload = st.session_state.llm_router.handle_user(
             user_input,
             func_name=effective_func_name,
-            classifier_data=classifier_metadata,
+            classifier_data=classifier_meta,
             func_output=effective_output,
         )
         if request_wants_map:
@@ -370,82 +438,66 @@ if given_input:
                     st.markdown(err_msg)
                 st.session_state.slot_state = None
 
-    # Add this right after line 156 (after the slot-filling section):
-
     # --- Handle clash resolution ---
     elif "clash_state" in st.session_state:
         print("[DEBUG] Clash State active")
         clash_info = st.session_state.clash_state
         answer = input_text.lower().strip()
-        
+
         add_message("user", input_text)
         with st.chat_message("user"):
             st.markdown(input_text)
-        
-        # Simple choices: 1, 2, or skip
-        if answer in {"1"}:
-            chosen_func = clash_info["classifier_func"]
+
+        if answer in {"1", "2"}:
+            chosen_func = clash_info["classifier_func"] if answer == "1" else clash_info["rule_func"]
             del st.session_state.clash_state
-            
+
             add_message("assistant", f"Using: {chosen_func}")
             with st.chat_message("assistant"):
                 st.markdown(f"Using: {chosen_func}")
-            
-            # Execute the function
+
             try:
                 description = get_function_description(chosen_func)
-                with st.spinner(f"Running {description}..."):
-                    params = disp.pure_parse(clash_info["tagged_input"], chosen_func)
-                    out = disp.run_function(chosen_func, params)
-                stream_response(clash_info["original_input"], chosen_func, params, out)
+                if chosen_func in GEOCHAT_REDIRECT_FUNCS:
+                    with st.spinner(f"Running {description}..."):
+                        geo_payload = build_geo_lookup_payload(clash_info["original_input"], chosen_func)
+                    stream_response(
+                        clash_info["original_input"],
+                        geo_payload["func_name"],
+                        geo_payload.get("params"),
+                        geo_payload["func_output"],
+                        classifier_metadata=geo_payload["classifier_data"],
+                    )
+                else:
+                    with st.spinner(f"Running {description}..."):
+                        params = disp.pure_parse(clash_info["tagged_input"], chosen_func)
+                        out = disp.run_function(chosen_func, params)
+                    stream_response(clash_info["original_input"], chosen_func, params, out)
             except MissingSlot as ms:
                 st.session_state.slot_state = {
                     "func_name": chosen_func,
                     "aux_ctx": clash_info["tagged_input"],
                     "slots_needed": [ms.slot],
-                    "orig_query": clash_info["original_input"]
+                    "orig_query": clash_info["original_input"],
                 }
                 prompt = f"What's your {ms.slot}?"
                 add_message("assistant", prompt)
                 with st.chat_message("assistant"):
                     st.markdown(prompt)
-                        
-        elif answer in {"2"}:
-            chosen_func = clash_info["rule_func"]
-            del st.session_state.clash_state
-            
-            add_message("assistant", f"Using: {chosen_func}")
-            with st.chat_message("assistant"):
-                st.markdown(f"Using: {chosen_func}")
-            
-            # Execute the function
-            try:
-                description = get_function_description(chosen_func)
-                with st.spinner(f"Running {description}..."):
-                    params = disp.pure_parse(clash_info["tagged_input"], chosen_func)
-                    out = disp.run_function(chosen_func, params)
-                stream_response(clash_info["original_input"], chosen_func, params, out)
-            except MissingSlot as ms:
-                st.session_state.slot_state = {
-                    "func_name": chosen_func,
-                    "aux_ctx": clash_info["tagged_input"],
-                    "slots_needed": [ms.slot],
-                    "orig_query": clash_info["original_input"]
-                }
-                prompt = f"What's your {ms.slot}?"
-                add_message("assistant", prompt)
+            except Exception as exc:
+                err_msg = f"Error: {exc}"
+                add_message("assistant", err_msg)
                 with st.chat_message("assistant"):
-                    st.markdown(prompt)
-                        
+                    st.markdown(err_msg)
+
         elif answer in {"skip"}:
             del st.session_state.clash_state
             add_message("assistant", "Skipping function; sending to LLM.")
             with st.chat_message("assistant"):
                 st.markdown("Skipping function; sending to LLM.")
             stream_response(clash_info["original_input"])
-            
+
         else:
-            # Invalid choice - ask again
             add_message("assistant", "Please type '1', '2', or 'skip'.")
             with st.chat_message("assistant"):
                 st.markdown("Please type '1', '2', or 'skip'.")
@@ -458,37 +510,49 @@ if given_input:
         # Continue with normal function execution logic
             print("[DEBUG] Final Function: ", func_name)
             if func_name:
-                try:
+                if func_name in GEOCHAT_REDIRECT_FUNCS:
                     description = get_function_description(func_name)
                     with st.spinner(f"Running {description}..."):
-                        params = disp.pure_parse(input_text, func_name)
-                        out = disp.run_function(func_name, params)
-                    print("[DEBUG] OUTPUT after running: ", out)
-                    stream_response(input_text, func_name, params, out)
-                except MissingSlot as ms:
-                    st.session_state.slot_state = {
-                        "func_name": func_name,
-                        "aux_ctx": input_text,
-                        "slots_needed": [ms.slot],
-                        "orig_query": input_text
-                    }
-                    prompt = f"What's your {ms.slot}?"
-                    add_message("assistant", prompt)
-                    with st.chat_message("assistant"):
-                        st.markdown(
-                            f"<div style='margin-bottom:0.5em; padding:0.5em; background:#f6f6f6; border-radius:6px;'>"
-                            f"<b>NOTE:</b><br>"
-                            f"<span style='font-size:0.92em; color:#888; font-style:italic;'>The system is trying to call a function: {func_name}. If you believe that this is not intended, please type 'skip' or similar.</span>"
-                            f"</div>",
-                            unsafe_allow_html=True
-                        )
-                        st.markdown(prompt)
-                except Exception as exc:
-                    print(f"[DEBUG] Exception caught: {exc}")
-                    err_msg = f"Error: {exc}"
-                    add_message("assistant", err_msg)
-                    with st.chat_message("assistant"):
-                        st.markdown(err_msg)
+                        geo_payload = build_geo_lookup_payload(input_text, func_name)
+                    stream_response(
+                        input_text,
+                        geo_payload["func_name"],
+                        geo_payload.get("params"),
+                        geo_payload["func_output"],
+                        classifier_metadata=geo_payload["classifier_data"],
+                    )
+                else:
+                    try:
+                        description = get_function_description(func_name)
+                        with st.spinner(f"Running {description}..."):
+                            params = disp.pure_parse(input_text, func_name)
+                            out = disp.run_function(func_name, params)
+                        print("[DEBUG] OUTPUT after running: ", out)
+                        stream_response(input_text, func_name, params, out)
+                    except MissingSlot as ms:
+                        st.session_state.slot_state = {
+                            "func_name": func_name,
+                            "aux_ctx": input_text,
+                            "slots_needed": [ms.slot],
+                            "orig_query": input_text
+                        }
+                        prompt = f"What's your {ms.slot}?"
+                        add_message("assistant", prompt)
+                        with st.chat_message("assistant"):
+                            st.markdown(
+                                f"<div style='margin-bottom:0.5em; padding:0.5em; background:#f6f6f6; border-radius:6px;'>"
+                                f"<b>NOTE:</b><br>"
+                                f"<span style='font-size:0.92em; color:#888; font-style:italic;'>The system is trying to call a function: {func_name}. If you believe that this is not intended, please type 'skip' or similar.</span>"
+                                f"</div>",
+                                unsafe_allow_html=True
+                            )
+                            st.markdown(prompt)
+                    except Exception as exc:
+                        print(f"[DEBUG] Exception caught: {exc}")
+                        err_msg = f"Error: {exc}"
+                        add_message("assistant", err_msg)
+                        with st.chat_message("assistant"):
+                            st.markdown(err_msg)
             else:
                 print("[DEBUG] Function calling skipped")
                 stream_response(input_text)

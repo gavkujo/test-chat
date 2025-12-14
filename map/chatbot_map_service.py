@@ -345,6 +345,26 @@ def filter_records_by_status(
         if point_id:
             normalized["PointID"] = point_id
 
+        def _clean_value(value: Any) -> Any:
+            if isinstance(value, str):
+                stripped = value.strip()
+                if not stripped or stripped.lower() in {"null", "none", "n/a", "na"}:
+                    return None
+                return stripped
+            return value
+
+        def _assign(canonical: str, *aliases: str) -> None:
+            for key in (canonical,) + aliases:
+                if key in record:
+                    candidate = _clean_value(record.get(key))
+                    if candidate is not None:
+                        normalized[canonical] = candidate
+                        return
+
+        _assign("7day_rate", "seven_day_rate", "weekly_rate")
+        _assign("Surcharge_Pressure", "surcharge_pressure", "surcharge_pressure_kpa")
+        _assign("Asaoka_DOC", "asaoka_doc", "degreeofconsolidation", "asaokaDoc")
+
         status_value = record.get("Status") or record.get("status")
         status = status_value.strip().upper() if isinstance(status_value, str) else None
         if status:
