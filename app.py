@@ -182,12 +182,12 @@ def render_assistant_payload(payload: ResponsePayload, func_output=None):
 
     for table in payload.tables:
         st.markdown(f"\n **{table.title}**")
-        st.dataframe(table.dataframe, use_container_width=True)
+        st.dataframe(table.dataframe, width = 'stretch')
 
     for chart in payload.charts:
         try:
             fig = pio.from_json(chart.figure_json)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, width = 'stretch')
             if chart.title:
                 st.caption(chart.title)
         except Exception as exc:

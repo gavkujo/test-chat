@@ -103,7 +103,7 @@ def main() -> None:
         st.write(result.response["response_message"])
 
         figure = from_json(result.response["figure_json"])
-        st.plotly_chart(figure, use_container_width=True)
+        st.plotly_chart(figure, width='stretch')
 
         col1, col2 = st.columns(2)
         with col1:
