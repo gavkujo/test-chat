@@ -13,9 +13,11 @@ Features:
 5. Automatic map rendering when the user explicitly requests a map view.
 6. Session state management for chat history, slot state, dispatcher, classifier, and LLM router.
 7. Debug logging for input handling, slot-filling, clash resolution, and function execution.
-'''
+''' 
 
 import os
+import base64
+from pathlib import Path
 from typing import Any, Dict, Iterable, Optional
 
 import plotly.io as pio
@@ -32,6 +34,11 @@ from map.chatbot_map_service import (
     build_map_for_prompt,
     lookup_prompt_records,
 )
+
+BASE_DIR = Path(__file__).resolve().parent
+GRAPHICS_DIR = BASE_DIR / "static" / "graphics"
+SIDEBAR_LOGO = GRAPHICS_DIR / "PHBJV logo.png"
+HEADER_LOGO = GRAPHICS_DIR / "Boka-PHBJV logo.png"
 
 @st.cache_resource
 def load_classifier():
@@ -72,6 +79,55 @@ def wants_map(prompt: str) -> bool:
     if "map" not in lowered:
         return False
     return any(keyword in lowered for keyword in MAP_KEYWORDS) or lowered.strip().startswith("map")
+
+
+def apply_chat_input_theme(map_mode_enabled: bool) -> None:
+    """Lightweight styling shim to highlight chat input when map mode is active."""
+
+    if map_mode_enabled:
+        st.markdown(
+            """
+            <style>
+            div[data-testid="stChatInput"] textarea {
+                background-color: #e6f7e6;
+                border: 1px solid #6fbf73;
+            }
+            div[data-testid="stChatInput"] textarea::placeholder {
+                color: #2e7d32;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            """
+            <style>
+            div[data-testid="stChatInput"] textarea {
+                background-color: #ffffff;
+                border: 1px solid #d4d4d4;
+            }
+            div[data-testid="stChatInput"] textarea::placeholder {
+                color: inherit;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+
+
+def render_header_logo() -> None:
+    if not HEADER_LOGO.exists():
+        return
+    encoded = base64.b64encode(HEADER_LOGO.read_bytes()).decode("utf-8")
+    st.markdown(
+        f"""
+        <div style="display:flex; justify-content:flex-end; align-items:center;">
+            <img src="data:image/png;base64,{encoded}" alt="Boskalis logo" style="max-height:72px;">
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def attach_map_payload(prompt: str, payload: ResponsePayload) -> bool:
@@ -285,9 +341,16 @@ def render_assistant_payload(payload: ResponsePayload, func_output=None):
 
 # --- Streamlit Chat UI for NL2Func Pipeline ---
 st.set_page_config(page_title="Boskalis GeoChat", layout="wide")
-st.title("Boskalis GeoChat Assistant")
+header_cols = st.columns([1, 0.28])
+with header_cols[0]:
+    st.title("Boskalis GeoChat Assistant")
+with header_cols[1]:
+    render_header_logo()
 
 # --- Sidebar Controls ---
+if SIDEBAR_LOGO.exists():
+    st.sidebar.image(str(SIDEBAR_LOGO), use_column_width=True)
+
 st.sidebar.markdown("### Controls")
 if st.sidebar.button("🗑️ Clear Chat"):
     st.session_state.chat_history = []
@@ -299,11 +362,20 @@ if st.sidebar.button("🗑️ Clear Chat"):
 
     st.rerun()
 
+map_mode_checkbox = st.sidebar.checkbox(
+    "🗺️ Map mode",
+    value=st.session_state.get("map_mode", False),
+    help="Prefix prompts with 'map' so you can type locations like 'berth B1' and jump straight to a map view.",
+)
+st.session_state.map_mode = map_mode_checkbox
+
 # --- Session State Initialization ---
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "slot_state" not in st.session_state:
     st.session_state.slot_state = None
+if "map_mode" not in st.session_state:
+    st.session_state.map_mode = False
 if "dispatcher" not in st.session_state:
     st.session_state.classifier = load_classifier()
     st.session_state.llm_router = LLMRouter()
@@ -378,7 +450,9 @@ def stream_response(user_input, func_name=None, params=None, func_output=None, c
 # --- Main Flow ---
 display_chat()
 
-given_input = st.chat_input("Type your message...", key="input")
+apply_chat_input_theme(st.session_state.map_mode)
+chat_placeholder = "enter an area" if st.session_state.map_mode else "Type your message..."
+given_input = st.chat_input(chat_placeholder, key="input")
 if given_input:
     input_text = given_input.strip()
     disp = st.session_state.dispatcher
@@ -505,17 +579,22 @@ if given_input:
     # --- Initial classify (inject tags here only) ---
     else:
         print("[DEBUG] Tags case active")
+        prompt_text = input_text
+        if st.session_state.map_mode:
+            lowered_prompt = prompt_text.lower()
+            if prompt_text and not lowered_prompt.startswith("map"):
+                prompt_text = f"map {prompt_text}"
         try: 
-            func_name = choose_function(input_text, st.session_state.classifier)
+            func_name = choose_function(prompt_text, st.session_state.classifier)
         # Continue with normal function execution logic
             print("[DEBUG] Final Function: ", func_name)
             if func_name:
                 if func_name in GEOCHAT_REDIRECT_FUNCS:
                     description = get_function_description(func_name)
                     with st.spinner(f"Running {description}..."):
-                        geo_payload = build_geo_lookup_payload(input_text, func_name)
+                        geo_payload = build_geo_lookup_payload(prompt_text, func_name)
                     stream_response(
-                        input_text,
+                        prompt_text,
                         geo_payload["func_name"],
                         geo_payload.get("params"),
                         geo_payload["func_output"],
@@ -525,16 +604,16 @@ if given_input:
                     try:
                         description = get_function_description(func_name)
                         with st.spinner(f"Running {description}..."):
-                            params = disp.pure_parse(input_text, func_name)
+                            params = disp.pure_parse(prompt_text, func_name)
                             out = disp.run_function(func_name, params)
                         print("[DEBUG] OUTPUT after running: ", out)
-                        stream_response(input_text, func_name, params, out)
+                        stream_response(prompt_text, func_name, params, out)
                     except MissingSlot as ms:
                         st.session_state.slot_state = {
                             "func_name": func_name,
-                            "aux_ctx": input_text,
+                            "aux_ctx": prompt_text,
                             "slots_needed": [ms.slot],
-                            "orig_query": input_text
+                            "orig_query": prompt_text
                         }
                         prompt = f"What's your {ms.slot}?"
                         add_message("assistant", prompt)
@@ -555,14 +634,14 @@ if given_input:
                             st.markdown(err_msg)
             else:
                 print("[DEBUG] Function calling skipped")
-                stream_response(input_text)
+                stream_response(prompt_text)
         except FunctionClash as clash:
             # Handle function clash like missing slot
             st.session_state.clash_state = {
                 "classifier_func": clash.classifier_func,
                 "rule_func": clash.rule_func,
                 "original_input": clash.original_input,
-                "tagged_input": input_text  # Store the input with tags
+                "tagged_input": prompt_text  # Store the input with tags
             }
             
             # Show clash resolution prompt
