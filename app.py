@@ -90,7 +90,7 @@ def apply_chat_input_theme(map_mode_enabled: bool) -> None:
             <style>
             div[data-testid="stChatInput"] textarea {
                 background-color: #e6f7e6;
-                border: 1px solid #6fbf73;
+                margin-left: 0px;
             }
             div[data-testid="stChatInput"] textarea::placeholder {
                 color: #2e7d32;
@@ -104,8 +104,7 @@ def apply_chat_input_theme(map_mode_enabled: bool) -> None:
             """
             <style>
             div[data-testid="stChatInput"] textarea {
-                background-color: #ffffff;
-                border: 1px solid #d4d4d4;
+                margin-left: 0px;
             }
             div[data-testid="stChatInput"] textarea::placeholder {
                 color: inherit;
@@ -349,7 +348,7 @@ with header_cols[1]:
 
 # --- Sidebar Controls ---
 if SIDEBAR_LOGO.exists():
-    st.sidebar.image(str(SIDEBAR_LOGO), use_column_width=True)
+    st.sidebar.image(str(SIDEBAR_LOGO), use_container_width=True)
 
 st.sidebar.markdown("### Controls")
 if st.sidebar.button("🗑️ Clear Chat"):
@@ -363,7 +362,7 @@ if st.sidebar.button("🗑️ Clear Chat"):
     st.rerun()
 
 map_mode_checkbox = st.sidebar.checkbox(
-    "🗺️ Map mode",
+    "Map mode",
     value=st.session_state.get("map_mode", False),
     help="Prefix prompts with 'map' so you can type locations like 'berth B1' and jump straight to a map view.",
 )
@@ -451,7 +450,7 @@ def stream_response(user_input, func_name=None, params=None, func_output=None, c
 display_chat()
 
 apply_chat_input_theme(st.session_state.map_mode)
-chat_placeholder = "enter an area" if st.session_state.map_mode else "Type your message..."
+chat_placeholder = "   Enter an area" if st.session_state.map_mode else "   Type your message..."
 given_input = st.chat_input(chat_placeholder, key="input")
 if given_input:
     input_text = given_input.strip()
