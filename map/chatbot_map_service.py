@@ -354,16 +354,23 @@ def filter_records_by_status(
             return value
 
         def _assign(canonical: str, *aliases: str) -> None:
+            candidate: Any = None
             for key in (canonical,) + aliases:
-                if key in record:
-                    candidate = _clean_value(record.get(key))
-                    if candidate is not None:
-                        normalized[canonical] = candidate
-                        return
+                if key not in record:
+                    continue
+                candidate = _clean_value(record.get(key))
+                if candidate is not None:
+                    break
+
+            if candidate is None and canonical in normalized:
+                candidate = _clean_value(normalized.get(canonical))
+
+            if candidate is not None:
+                normalized[canonical] = candidate
 
         _assign("7day_rate", "seven_day_rate", "weekly_rate")
         _assign("Surcharge_Pressure", "surcharge_pressure", "surcharge_pressure_kpa")
-        _assign("Asaoka_DOC", "asaoka_doc", "degreeofconsolidation", "asaokaDoc")
+        _assign("Asaoka_DOC", "asaoka_doc", "degreeofconsolidation", "asaokaDoc", "DOC", "doc")
 
         status_value = record.get("Status") or record.get("status")
         status = status_value.strip().upper() if isinstance(status_value, str) else None
